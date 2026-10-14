@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Checkpoint RNG restore failures must be visible and CPU-state recoverable."""
+
 import inspect
 import random
 
@@ -35,9 +36,13 @@ def fixture_checkpoint(tmp_path):
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
     saved_before = cpu_rng_snapshot()
     save_accelerator_state(
-        output_dir=str(tmp_path), model_states=[model.state_dict()],
-        optimizers=[optimizer], schedulers=[], dataloaders=[],
-        process_index=0, step=7,
+        output_dir=str(tmp_path),
+        model_states=[model.state_dict()],
+        optimizers=[optimizer],
+        schedulers=[],
+        dataloaders=[],
+        process_index=0,
+        step=7,
     )
     return model, optimizer, saved_before, tmp_path / f"{RNG_STATE_NAME}_0.pkl"
 
@@ -56,8 +61,7 @@ def same_rng(a, b):
 
 def load_checkpoint(tmp_path, model, opt, **kw):
     return load_accelerator_state(
-        input_dir=str(tmp_path), models=[model], optimizers=[opt],
-        schedulers=[], dataloaders=[], process_index=0, **kw
+        input_dir=str(tmp_path), models=[model], optimizers=[opt], schedulers=[], dataloaders=[], process_index=0, **kw
     )
 
 
@@ -80,6 +84,7 @@ def test_truncated_rng_file_warns_and_does_not_alter_cpu_streams(tmp_path, monke
     before = cpu_rng_snapshot()
     warnings = []
     from accelerate import checkpointing
+
     monkeypatch.setattr(checkpointing.logger, "warning", lambda message: warnings.append(message))
     result = load_checkpoint(tmp_path, model, opt)
     assert "step" not in result
@@ -106,8 +111,7 @@ def test_missing_rng_field_does_not_partially_restore_python_rng(tmp_path, monke
     # The file is readable and the training step is present, but a required
     # CPU RNG field is missing; do not accept a partial restore as success.
     torch.save(
-        {"step": 7, "random_state": random.getstate(),
-         "numpy_random_seed": np.random.get_state()},
+        {"step": 7, "random_state": random.getstate(), "numpy_random_seed": np.random.get_state()},
         rng_path,
     )
     random.seed(999)
@@ -116,6 +120,7 @@ def test_missing_rng_field_does_not_partially_restore_python_rng(tmp_path, monke
     prior = cpu_rng_snapshot()
     warnings = []
     from accelerate import checkpointing
+
     monkeypatch.setattr(checkpointing.logger, "warning", lambda message: warnings.append(message))
     result = load_checkpoint(tmp_path, model, opt)
     assert "step" not in result
