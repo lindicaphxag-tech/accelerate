@@ -1029,6 +1029,7 @@ def prepare_data_loader(
     non_blocking: bool = False,
     use_stateful_dataloader: bool = False,
     torch_device_mesh=None,
+    already_sharded: bool = False,
 ) -> DataLoader:
     """
     Wraps a PyTorch `DataLoader` to generate batches for one of the processes only.
@@ -1056,6 +1057,10 @@ def prepare_data_loader(
 
             Setting this option to `True` requires that the batch size of the `dataloader` is a round multiple of
             `batch_size`.
+        already_sharded (`bool`, *optional*, defaults to `False`):
+            The input DataLoader is already restricted to its local process. Preserve its exact sampler or iterable
+            source and do not apply BatchSamplerShard, IterableDatasetShard or a second datasets shard. The caller
+            must ensure compatible per-rank step counts.
         put_on_device (`bool`, *optional*, defaults to `False`):
             Whether or not to put the batches on `device` (only works if the batches are nested list, tuples or
             dictionaries of tensors).
@@ -1110,6 +1115,19 @@ def prepare_data_loader(
 
     </Tip>
     """
+    # A pre-sharded loader is owned by its source data pipeline. Broadcasting
+    # from the main process or splitting local batches would violate that
+    # ownership, and re-seeding a local sampler would change its order.
+    if already_sharded:
+        if dispatch_batches is True:
+            raise ValueError("already_sharded=True is incompatible with dispatch_batches=True")
+        if split_batches:
+            raise ValueError("already_sharded=True is incompatible with split_batches=True")
+        if use_seedable_sampler:
+            raise ValueError("already_sharded=True is incompatible with use_seedable_sampler=True")
+        if dispatch_batches is None:
+            dispatch_batches = False
+
     if dispatch_batches is None:
         if not put_on_device:
             dispatch_batches = False
@@ -1220,7 +1238,7 @@ def prepare_data_loader(
         dataloader.generator = generator
         dataloader.sampler.generator = generator
     # No change if no multiprocess
-    if (num_processes != 1 or state.distributed_type == DistributedType.MEGATRON_LM) and not dispatch_batches:
+    if (num_processes != 1 or state.distributed_type == DistributedType.MEGATRON_LM) and not dispatch_batches and not already_sharded:
         if is_datasets_available():
             from datasets import IterableDataset as DatasetsIterableDataset
         if (
