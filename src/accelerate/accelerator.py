@@ -3788,7 +3788,14 @@ class Accelerator:
         self._load_model_state_pre_hook[handle.id] = hook
         return handle
 
-    def load_state(self, input_dir: str | None = None, load_kwargs: dict | None = None, **load_model_func_kwargs):
+    def load_state(
+        self,
+        input_dir: str | None = None,
+        load_kwargs: dict | None = None,
+        *,
+        strict_rng_state: bool = False,
+        **load_model_func_kwargs,
+    ):
         """
         Loads the current states of the model, optimizer, scaler, RNG generators, and registered objects.
 
@@ -3806,6 +3813,9 @@ class Accelerator:
             load_kwargs (`dict`, *optional*):
                 Additional keyword arguments for the underlying `load` function, such as optional arguments for
                 state_dict and optimizer on.
+            strict_rng_state (`bool`, *optional*, defaults to `False`):
+                Fail the load if the random-number-generator state cannot be restored. This is a checkpoint
+                reproducibility requirement, not a keyword argument for a model loading backend.
             load_model_func_kwargs (`dict`, *optional*):
                 Additional keyword arguments for loading model which can be passed to the underlying load function,
                 such as optional arguments for DeepSpeed's `load_checkpoint` function or a `map_location` to load the
@@ -3919,6 +3929,7 @@ class Accelerator:
             scaler,
             map_location,
             load_kwargs,
+            strict_rng_state=strict_rng_state,
             **load_model_func_kwargs,
         )
         if "step" in override_attributes:

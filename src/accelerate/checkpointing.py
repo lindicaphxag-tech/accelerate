@@ -190,6 +190,7 @@ def load_accelerator_state(
     scaler: Optional[GradScaler] = None,
     map_location=None,
     load_kwargs: Optional[dict] = None,
+    strict_rng_state: bool = False,
     **load_model_func_kwargs,
 ) -> dict:
     """
@@ -214,6 +215,9 @@ def load_accelerator_state(
             What device to load the optimizer state onto. Should be one of either "cpu" or "on_device".
         load_kwargs (`dict`, *optional*):
             Additional arguments that can be passed to the `load` function.
+        strict_rng_state (`bool`, *optional*, defaults to `False`):
+            Raise instead of continuing when RNG checkpoint restoration fails.
+            The default emits a warning to preserve legacy loading behavior.
         load_model_func_kwargs (`dict`, *optional*):
             Additional arguments that can be passed to the model's `load_state_dict` method.
 
@@ -289,11 +293,36 @@ def load_accelerator_state(
         scaler.load_state_dict(scaler_state)
         logger.info("GradScaler state loaded successfully")
 
+    # Save the CPU RNG streams before restoration. Partial or corrupt RNG
+    # files must not leave only some of these streams restored, silently
+    # creating an internally inconsistent training continuation.
+    python_rng_before = random.getstate()
+    numpy_rng_before = np.random.get_state()
+    torch_rng_before = torch.get_rng_state()
     # Random states
+    rng_path = input_dir.joinpath(f"{RNG_STATE_NAME}_{process_index}.pkl")
     try:
-        states = load(input_dir.joinpath(f"{RNG_STATE_NAME}_{process_index}.pkl"))
-        if "step" in states:
-            override_attributes["step"] = states["step"]
+        states = load(rng_path)
+        required = ["random_state", "numpy_random_seed", "torch_manual_seed"]
+        if is_xpu_available():
+            required.append("torch_xpu_manual_seed")
+        if is_mlu_available():
+            required.append("torch_mlu_manual_seed")
+        elif is_sdaa_available():
+            required.append("torch_sdaa_manual_seed")
+        elif is_musa_available():
+            required.append("torch_musa_manual_seed")
+        if is_hpu_available():
+            required.append("torch_hpu_manual_seed")
+        if is_neuron_available():
+            required.append("torch_neuron_manual_seed")
+        if is_cuda_available():
+            required.append("torch_cuda_manual_seed")
+        if is_torch_xla_available():
+            required.append("xm_seed")
+        missing = [key for key in required if key not in states]
+        if missing:
+            raise KeyError(f"Checkpoint RNG state lacks required keys: {missing}")
         random.setstate(states["random_state"])
         np.random.set_state(states["numpy_random_seed"])
         torch.set_rng_state(states["torch_manual_seed"])
@@ -313,9 +342,25 @@ def load_accelerator_state(
             torch.cuda.set_rng_state_all(states["torch_cuda_manual_seed"])
         if is_torch_xla_available():
             xm.set_rng_state(states["xm_seed"])
+        if "step" in states:
+            override_attributes["step"] = states["step"]
         logger.info("All random states loaded successfully")
-    except Exception:
-        logger.info("Could not load random states")
+    except Exception as error:
+        # CPU streams can be restored transactionally. Accelerator-specific
+        # backends may already have been touched if a backend's setter raised,
+        # so do NOT pretend the entire distributed state was recovered.
+        random.setstate(python_rng_before)
+        np.random.set_state(numpy_rng_before)
+        torch.set_rng_state(torch_rng_before)
+        message = (
+            f"Could not restore RNG state from {rng_path}: {error}. "
+            "CPU RNG streams have been rolled back, but resumed training "
+            "is NOT guaranteed to reproduce uninterrupted training; "
+            "accelerator-device RNG streams may be partially restored."
+        )
+        logger.warning(message)
+        if strict_rng_state:
+            raise RuntimeError(message) from error
 
     return override_attributes
 
