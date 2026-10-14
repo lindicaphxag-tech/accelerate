@@ -1,0 +1,28 @@
+name: Check pre-sharded DataLoader rank ownership with actual Accelerate
+on:
+  push:
+    branches: [research/dataloader-shard-contract]
+    paths:
+      - src/accelerate/data_loader.py
+      - src/accelerate/accelerator.py
+      - src/accelerate/utils/dataclasses.py
+      - tests/test_dataloader_existing_shard_ownership.py
+      - .github/workflows/pre-sharded-loader-contract-cpu.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  owned-data-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual Accelerate CPU dependencies
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e . pytest pytest-cov
+      - name: Full-denominator rank IDs and actual current package preparation
+        run: python -m pytest -q tests/test_dataloader_existing_shard_ownership.py
