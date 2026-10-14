@@ -4,6 +4,7 @@ on:
     branches: [research/checkpoint-rng-test]
     paths:
       - src/accelerate/checkpointing.py
+      - src/accelerate/accelerator.py
       - tests/test_checkpoint_rng_restore_transaction.py
       - .github/workflows/fork-rng-restore-reproducibility.yml
   workflow_dispatch:
