@@ -2737,6 +2737,7 @@ class Accelerator:
             non_blocking=self.non_blocking,
             use_stateful_dataloader=self.use_stateful_dataloader,
             torch_device_mesh=device_mesh,
+            already_sharded=self.dataloader_config.already_sharded,
         )
         self._dataloaders.append(prepared_data_loader)
         return prepared_data_loader
