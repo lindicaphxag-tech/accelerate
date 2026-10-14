@@ -838,6 +838,11 @@ class DataLoaderConfiguration:
             If set to `True`, in cases where the total batch size across all processes does not exactly divide the
             dataset, samples at the start of the dataset will be duplicated so the batch can be divided equally among
             all workers.
+        already_sharded (`bool`, defaults to `False`):
+            Declare that this DataLoader already contains only the data assigned to the current process. When True,
+            Accelerate preserves its sample ownership rather than applying another distributed sampler or iterable
+            dataset shard. It still prepares device placement, per-epoch iteration, and checkpoint state. Do not
+            combine with dispatch_batches, split_batches, or use_seedable_sampler.
         use_seedable_sampler (`bool`, defaults to `False`):
             Whether or not use a fully seedable random sampler ([`data_loader.SeedableRandomSampler`]). Ensures
             training results are fully reproducible using a different sampling technique. While seed-to-seed results
@@ -856,6 +861,10 @@ class DataLoaderConfiguration:
             This requires `torchdata` version 0.8.0 or higher that supports StatefulDataLoader to be installed.
     """
 
+    already_sharded: bool = field(
+        default=False,
+        metadata={"help": "Preserve a DataLoader's existing per-rank ownership instead of applying an additional shard."},
+    )
     split_batches: bool = field(
         default=False,
         metadata={
