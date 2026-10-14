@@ -1,10 +1,12 @@
 """Checkpoint RNG restore failures must be visible and CPU-state recoverable."""
+import inspect
 import random
 
 import numpy as np
 import pytest
 import torch
 
+from accelerate import Accelerator
 from accelerate.checkpointing import load_accelerator_state, save_accelerator_state
 from accelerate.utils import RNG_STATE_NAME
 
@@ -105,3 +107,30 @@ def test_missing_rng_field_does_not_partially_restore_python_rng(tmp_path, monke
     assert "step" not in result
     assert any("torch_manual_seed" in msg for msg in warnings)
     same_rng(cpu_rng_snapshot(), prior)
+
+
+def test_accelerator_public_strict_rng_policy_is_not_model_backend_kwargs():
+    # The policy must bind to a named Accelerator argument: if left in
+    # **load_model_func_kwargs, DeepSpeed receives an unknown backend kwarg.
+    sig = inspect.signature(Accelerator.load_state)
+    assert "strict_rng_state" in sig.parameters
+    assert sig.parameters["strict_rng_state"].default is False
+    assert sig.parameters["strict_rng_state"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_accelerator_public_strict_rng_restore_detects_corrupt_checkpoint(tmp_path):
+    accelerator = Accelerator(cpu=True)
+    model = torch.nn.Linear(3, 2)
+    opt = torch.optim.SGD(model.parameters(), lr=0.01)
+    model, opt = accelerator.prepare(model, opt)
+    accelerator.save_state(str(tmp_path))
+    rng_path = tmp_path / f"{RNG_STATE_NAME}_{accelerator.process_index}.pkl"
+    assert rng_path.exists()
+    rng_path.write_bytes(b"TRUNCATED RNG STATE")
+    random.seed(48)
+    np.random.seed(49)
+    torch.manual_seed(50)
+    snapshot = cpu_rng_snapshot()
+    with pytest.raises(RuntimeError, match="Could not restore RNG state"):
+        accelerator.load_state(str(tmp_path), strict_rng_state=True)
+    same_rng(cpu_rng_snapshot(), snapshot)
