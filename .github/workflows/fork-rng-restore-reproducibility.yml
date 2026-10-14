@@ -26,7 +26,3 @@ jobs:
       - name: Execute actual save-load, corrupt and missing-state tests
         run: |
           python -m pytest -q tests/test_checkpoint_rng_restore_transaction.py
-      - name: Show Ruff diff for checkpoint test
-        run: |
-          python -m pip install ruff==0.13.1
-          ruff format --diff tests/test_checkpoint_rng_restore_transaction.py
