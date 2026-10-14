@@ -323,8 +323,6 @@ def load_accelerator_state(
         missing = [key for key in required if key not in states]
         if missing:
             raise KeyError(f"Checkpoint RNG state lacks required keys: {missing}")
-        if "step" in states:
-            override_attributes["step"] = states["step"]
         random.setstate(states["random_state"])
         np.random.set_state(states["numpy_random_seed"])
         torch.set_rng_state(states["torch_manual_seed"])
@@ -344,6 +342,8 @@ def load_accelerator_state(
             torch.cuda.set_rng_state_all(states["torch_cuda_manual_seed"])
         if is_torch_xla_available():
             xm.set_rng_state(states["xm_seed"])
+        if "step" in states:
+            override_attributes["step"] = states["step"]
         logger.info("All random states loaded successfully")
     except Exception as error:
         # CPU streams can be restored transactionally. Accelerator-specific
